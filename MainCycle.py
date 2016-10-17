@@ -34,9 +34,11 @@ print ('Cos: ' + str(timeCosValue))
 print ('Sin: ' + str(timeSinValue))
 print ('AM or PM: ' + meridiem)
 
-#args = [0, -0.9396926, 0.3420202, "PM"]
-args = [0, timeCosValue, timeSinValue, meridiem]
-lifx.set_color("c3c602e1e2bff14e7889f9f442d685d81abc184b232f10d63a36bcf4a616c9c6", p_api.predict(args))
+args = [114.36, -0.9396926, 0.3420202, "PM"]
+#args = [0, timeCosValue, timeSinValue, meridiem]
+#lifx.set_color("c3c602e1e2bff14e7889f9f442d685d81abc184b232f10d63a36bcf4a616c9c6", p_api.predict(args))
+print(p_api.update(args))
+
 print("")
 print("------ endcycle -------")
 print("")

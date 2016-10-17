@@ -68,16 +68,30 @@ def predictBlue(tcos, tsin, meridiem):
       body=body, id="lux-b", project="lux-simulation-gb").execute()
     return float((result['outputValue']).replace("'",""))
 
+def updateRed(outputVal, tcos, tsin, meridiem):
+    body = {'output': outputVal, 'csvInstance':[tcos,tsin,meridiem]}
+    result = pAPI.update(
+      body=body, id="lux-r", project="lux-simulation-gb").execute()
+    return result
+
+def updateGreen(outputVal, tcos, tsin, meridiem):
+    body = {'output': outputVal, 'csvInstance':[tcos,tsin,meridiem]}
+    result = pAPI.update(
+      body=body, id="lux-g", project="lux-simulation-gb").execute()
+    return result
+
+def updateBlue(outputVal, tcos, tsin, meridiem):
+    body = {'output': outputVal, 'csvInstance':[tcos,tsin,meridiem]}
+    result = pAPI.update(
+      body=body, id="lux-b", project="lux-simulation-gb").execute()
+    return result
 
 def predict(argv):
-  try:
-    # if an incorrect number of arguments are supplied, throw an exception
-    if len(argv) != 4:
-        raise SyntaxError()
-  except SyntaxError:
-    print("Error -- invalid number of arguments.\n Usage:\n >> python predict.py <time cosine value> <time sine value> <meridiem>")
-    sys.exit(0)
 
+  if len(argv) != 4:
+    print("Error -- invalid number of arguments.\n Usage:\n >> python predict.py <time cosine value> <time sine value> <meridiem>")
+    raise SyntaxError()
+    
   # If you previously ran this app with an earlier version of the API
   # or if you change the list of scopes below, revoke your app's permission
   # here: https://accounts.google.com/IssuedAuthSubTokens
@@ -119,6 +133,57 @@ def predict(argv):
     return("rgb:{},{},{}".format(red_prediction,green_prediction, blue_prediction))
 
   	
+
+  except client.AccessTokenRefreshError:
+    print ('The credentials have been revoked or expired, please re-run '
+           'the application to re-authorize.')
+
+def update(argv):
+
+  # if an incorrect number of arguments are supplied, throw an exception
+  if len(argv) != 4:
+    print("Error -- invalid number of arguments.\n format: <outputValue> <time cosine value> <time sine value> <meridiem>")
+    raise SyntaxError()
+
+  # If you previously ran this app with an earlier version of the API
+  # or if you change the list of scopes below, revoke your app's permission
+  # here: https://accounts.google.com/IssuedAuthSubTokens
+  # Then re-run the app to re-authorize it.
+  service, flags = sample_tools.init(
+      argv[:1], 'prediction', 'v1.6', __doc__, __file__,
+      scope=(
+          'https://www.googleapis.com/auth/prediction',
+          'https://www.googleapis.com/auth/devstorage.read_only'))
+
+  # Allow for offline access, which will let predictions happen without
+  # constant authorization  
+  flow = client.flow_from_clientsecrets('client_secrets.json', scope=(
+          'https://www.googleapis.com/auth/prediction',
+          'https://www.googleapis.com/auth/devstorage.read_only'))
+  flow.params['access_type'] = 'offline'
+
+  try:
+    # Get access to the Prediction API.
+    global pAPI 
+    pAPI = service.trainedmodels()
+
+    # Describe model.
+    # print_header('Fetching model description')
+    # result = papi.analyze(id="lux-g", project="lux-simulation-gb").execute()
+    # print('Analyze results:')
+    # pprint.pprint(result)
+
+    #print_header('Making a prediction')
+    outputValue = argv[0]
+    time_cosine = argv[1] # -0.9396926
+    time_sine = argv[2] # 0.3420202
+    meridiem = argv[3] # "PM"
+
+    updateRedResult = updateRed(outputValue, time_cosine, time_sine, meridiem)
+    updateGreenResult = updateGreen(outputValue, time_cosine, time_sine, meridiem)
+    updateBlueResult = updateBlue(outputValue, time_cosine, time_sine, meridiem)
+
+    return("results:{},{},{}".format(updateRedResult,updateGreenResult,updateBlueResult))
 
   except client.AccessTokenRefreshError:
     print ('The credentials have been revoked or expired, please re-run '
