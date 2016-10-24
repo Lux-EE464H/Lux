@@ -135,7 +135,7 @@ def predict(argv):
       green_prediction = 0.0
     if blue_prediction < 0.0:
       blue_prediction = 0.0
-    return("rgb:{},{},{}".format(red_prediction,green_prediction, blue_prediction))
+    return {'r': red_prediction, 'g': green_prediction, 'b': blue_prediction}
 
   	
 
@@ -194,6 +194,3 @@ def update(argv):
   except client.AccessTokenRefreshError:
     print ('The credentials have been revoked or expired, please re-run '
            'the application to re-authorize.')
-
-if __name__ == '__main__':
-  main(sys.argv)

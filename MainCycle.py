@@ -132,10 +132,7 @@ def get_lighting(token):
 
 
 def validate_lighting(predicted, current, threshold):
-    p_rgb = predicted.split(',')
-    p_rgb = [float(p) / 255 for p in p_rgb]
-
-    c1 = sRGBColor(p_rgb[0], p_rgb[1], p_rgb[2])
+    c1 = sRGBColor(predicted['r'] / 255.0, predicted['g'] / 255.0, predicted['b'] / 255.0)
     c2 = sRGBColor(current['r'] / 255, current['g'] / 255, current['b'] / 255)
 
     de = delta_e_cie2000(convert_color(c1, LabColor), convert_color(c2, LabColor))
@@ -143,15 +140,13 @@ def validate_lighting(predicted, current, threshold):
     return de < threshold
 
 
-def check_last(rgb):
+def check_last(rgb, threshold):
     with open(last_input_path, 'r') as f:
         data = json.loads(f.read())
-        r = rgb['r'] == data['r']
-        g = rgb['g'] == data['g']
-        b = rgb['b'] == data['b']
+        same = validate_lighting(data, rgb, threshold)
 
-    LOG.info("Previous {} and current {} are same: {}".format(data, rgb, r and g and b))
-    return r and g and b
+    LOG.info("Previous {} and current {} are same: {}".format(data, rgb, same))
+    return same
 
 
 def get_user_input():
@@ -161,23 +156,12 @@ def get_user_input():
 
 
 def incorporate(mls, clouds, user):
-    mls_rgb = mls.split(',')
-    mls_rgb = [float(p) for p in mls_rgb]
-
-    if user is None:
-        return {
-            "r": mls_rgb[0],
-            "g": mls_rgb[1],
-            "b": mls_rgb[2],
-            "brightness": clouds / 2 + 0.5
-        }
-    else:
-        return {
-            "r": (mls_rgb[0] * (1 - user['weight'])) + (user['r'] * user['weight']),
-            "g": (mls_rgb[1] * (1 - user['weight'])) + (user['g'] * user['weight']),
-            "b": (mls_rgb[2] * (1 - user['weight'])) + (user['b'] * user['weight']),
-            "brightness": clouds / 2 + 0.5
-        }
+    if user is not None:
+        mls['r'] = (mls['r'] * (1 - user['weight'])) + (user['r'] * user['weight'])
+        mls['g'] = (mls['g'] * (1 - user['weight'])) + (user['g'] * user['weight'])
+        mls['b'] = (mls['b'] * (1 - user['weight'])) + (user['b'] * user['weight'])
+    mls['brightness'] = clouds / 2 + 0.5
+    return mls
 
 
 def update_last_input(rgb):
@@ -228,6 +212,12 @@ def post_to_bulbs(token, rgb, retries, t=1, current=1):
     return res
 
 
+def is_initial_cycle():
+    with open(last_input_path, 'r') as f:
+        data = json.loads(f.read())
+        return data['r'] == 0.0 and data['g'] == 0.0 and data['b'] == 0.0
+
+
 def main():
     config = init_resources()
 
@@ -235,19 +225,21 @@ def main():
     predicted = get_prediction()
     clouds = w_api.current_cloud_coverage()
 
+    if not is_initial_cycle():
+        # user changed lighting last cycle
+        if not check_last(current, config['de_similarity']):
+            init_user_input(current)
+
+        # update MLS if within threshold
+        if validate_lighting(predicted, current, config['de_threshold']):
+            update_mls(current)
+
+        update_user_input(config['decay'])
+
     user_input = get_user_input()
-    incorporated = incorporate(predicted.split(':')[1], clouds, user_input)
-
-    # update MLS if within threshold
-    if validate_lighting(predicted.split(':')[1], current, config['de_threshold']):
-        update_mls(current)
-
-    # user changed lighting last cycle
-    if not check_last(current):
-        init_user_input(current)
+    incorporated = incorporate(predicted, clouds, user_input)
 
     update_last_input(incorporated)
-    update_user_input(config['decay'])
     post_to_bulbs(config['lifx_token'], incorporated, 3)
 
 
