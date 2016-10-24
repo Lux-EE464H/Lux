@@ -145,6 +145,7 @@ def validate_lighting(predicted, current, config):
 
 def check_last(rgb):
     LOG.info("Comparing previous CCH input with current")
+    print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ " + str(rgb))
     with open(last_input_path, 'r') as f:
         data = json.loads(f.read())
         r = rgb[0] == data['r']
@@ -160,7 +161,7 @@ def get_user_input():
 
 def incorporate(mls, clouds, user):
     mls_rgb = mls.split(',')
-    mls_rgb = [float(p) / 255 for p in mls_rgb]
+    mls_rgb = [float(p) for p in mls_rgb]
 
     return {
         "r": (mls_rgb[0] * (1 - user['weight'])) + (user['r'] * user['weight']),
@@ -182,12 +183,20 @@ def update_last_input(rgb):
 
 def update_user_input(rgb, config):
     with open(user_input_path, 'w') as f:
-        data = {
+        if rgb['weight'] <= 0.0:
+            data = {
+            "r": rgb['r'],
+            "g": rgb['g'],
+            "b": rgb['b'],
+            "weight": 0.0
+        }
+        else:    
+            data = {
             "r": rgb['r'],
             "g": rgb['g'],
             "b": rgb['b'],
             "weight": rgb['weight'] - config['decay']
-        }
+            }
         json.dump(data, f)
 
 

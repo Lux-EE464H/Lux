@@ -129,6 +129,12 @@ def predict(argv):
     red_prediction = int(round(predictRed(time_cosine, time_sine, meridiem)))
     green_prediction = int(round(predictGreen(time_cosine, time_sine, meridiem)))
     blue_prediction = int(round(predictBlue(time_cosine, time_sine, meridiem)))
+    if red_prediction < 0.0:
+      red_prediction = 0.0
+    if green_prediction < 0.0:
+      green_prediction = 0.0
+    if blue_prediction < 0.0:
+      blue_prediction = 0.0
     return("rgb:{},{},{}".format(red_prediction,green_prediction, blue_prediction))
 
   	
