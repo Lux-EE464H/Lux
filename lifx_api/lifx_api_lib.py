@@ -4,7 +4,7 @@ import sys
 import pprint
 
 FORMAT = "%(asctime)-15s - %(levelname)s - %(module)20s:%(lineno)-5d - %(message)s"
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format=FORMAT)
+logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
 LOG = logging.getLogger(__name__)
 
 
@@ -21,7 +21,7 @@ def __validate_color(token, color):
 
     LOG.info("Validating color --- {}".format(request))
     response = requests.get('https://api.lifx.com/v1/color', data=request, headers=header)
-    LOG.debug("Validate color response: {}".format(response))
+    LOG.debug("Validate color response: {}".format(response.status_code))
 
     if response.status_code == 200:
         return True

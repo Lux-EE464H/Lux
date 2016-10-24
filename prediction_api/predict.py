@@ -129,7 +129,6 @@ def predict(argv):
     red_prediction = int(round(predictRed(time_cosine, time_sine, meridiem)))
     green_prediction = int(round(predictGreen(time_cosine, time_sine, meridiem)))
     blue_prediction = int(round(predictBlue(time_cosine, time_sine, meridiem)))
-    print("rgb:{},{},{}".format(red_prediction,green_prediction, blue_prediction))
     return("rgb:{},{},{}".format(red_prediction,green_prediction, blue_prediction))
 
   	
@@ -138,6 +137,7 @@ def predict(argv):
     print ('The credentials have been revoked or expired, please re-run '
            'the application to re-authorize.')
 
+# argv[0] should be an rgb tuple or array
 def update(argv):
 
   # if an incorrect number of arguments are supplied, throw an exception
@@ -179,9 +179,9 @@ def update(argv):
     time_sine = argv[2] # 0.3420202
     meridiem = argv[3] # "PM"
 
-    updateRedResult = updateRed(outputValue, time_cosine, time_sine, meridiem)
-    updateGreenResult = updateGreen(outputValue, time_cosine, time_sine, meridiem)
-    updateBlueResult = updateBlue(outputValue, time_cosine, time_sine, meridiem)
+    updateRedResult = updateRed(outputValue[0], time_cosine, time_sine, meridiem)
+    updateGreenResult = updateGreen(outputValue[1], time_cosine, time_sine, meridiem)
+    updateBlueResult = updateBlue(outputValue[2], time_cosine, time_sine, meridiem)
 
     return("results:{},{},{}".format(updateRedResult,updateGreenResult,updateBlueResult))
 
