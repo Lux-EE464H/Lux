@@ -6,8 +6,8 @@ import math
 import sys
 import os
 import json
+import time
 import logging
-import pprint
 import colorsys
 from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
@@ -17,54 +17,10 @@ FORMAT = "%(asctime)-15s - %(levelname)s - %(module)20s:%(lineno)-5d - %(message
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
 LOG = logging.getLogger(__name__)
 
-# totalMins = 24*60
-#
-# currentTime = datetime.datetime.now()
-# hours = currentTime.strftime('%H')
-# hours = int(hours)
-# minutes = currentTime.strftime('%M')
-# minutes = int(minutes)
-#
-# print("------ cycle -------")
-# print("")
-# minutesAfterMidnight = hours*60 + minutes
-# minutesPastNoon = (minutesAfterMidnight + (60*12)) % (24*60)
-# print("Timestamp:" + str(currentTime))
-# print("Minutes Past Noon: " + str(minutesPastNoon))
-#
-# timeCosValue = math.cos(minutesPastNoon*(2*math.pi/totalMins))
-# timeSinValue = math.sin(minutesPastNoon*(2*math.pi/totalMins))
-# if(abs(timeCosValue) < 0.0000000001):
-#     timeCosValue = 0.0
-# if(abs(timeSinValue) < 0.0000000001):
-#     timeSinValue = 0.0
-#
-# if(minutesPastNoon > 720):
-#     meridiem = "AM"
-# else:
-#     meridiem = "PM"
-#
-# print ('Cos: ' + str(timeCosValue))
-# print ('Sin: ' + str(timeSinValue))
-# print ('AM or PM: ' + meridiem)
-#
-# args = [114.36, -0.9396926, 0.3420202, "PM"]
-# #args = [0, timeCosValue, timeSinValue, meridiem]
-# #lifx.set_color("c3c602e1e2bff14e7889f9f442d685d81abc184b232f10d63a36bcf4a616c9c6", p_api.predict(args))
-# print(p_api.update(args))
-#
-# print("")
-# print("------ endcycle -------")
-# print("")
-
 resources_dir_path = os.path.join(os.getcwd(), "resources")
-config = os.path.join(resources_dir_path, "config.json")
-user_input = os.path.join(resources_dir_path, "user_input.json")
-last_input = os.path.join(resources_dir_path, "last_input.json")
-
-min_in_day = 24 * 60
-de_threshold = 20.0
-decay = 0.1
+config_path = os.path.join(resources_dir_path, "config.json")
+user_input_path = os.path.join(resources_dir_path, "user_input.json")
+last_input_path = os.path.join(resources_dir_path, "last_input.json")
 
 
 def init_resources():
@@ -72,39 +28,56 @@ def init_resources():
     if not os.path.isdir(resources_dir_path):
         os.makedirs(resources_dir_path)
 
-    if not os.path.exists(config):
-        with open(config, "w") as f:
-            f.write('{ "lifx_token" : "" }')
+    if not os.path.exists(config_path):
+        with open(config_path, "w") as f:
+            data = {
+                "lifx_token": "",
+                "min_in_day": 1440,
+                "de_threshold": 20.0,
+                "decay": 0.1
+            }
+            json.dump(data, f)
         raise FileNotFoundError("Must have config file. Creating it now.")
 
-    if not os.path.exists(user_input):
+    if not os.path.exists(user_input_path):
         LOG.info("Creating user_input.json")
-        with open(user_input, 'w') as f:
-            f.write('{ "r" : 0.0, "g" : 0.0, "b" : 0.0, "weight" : 0.0 }')
+        with open(user_input_path, 'w') as f:
+            data = {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0,
+                "weight": 0.0
+            }
+            json.dump(data, f)
 
-    if not os.path.exists(last_input):
+    if not os.path.exists(last_input_path):
         LOG.info("Creating last_input.json")
-        with open(last_input, 'w') as f:
-            f.write('{ "r" : 0.0, "g" : 0.0, "b" : 0.0 }')
+        with open(last_input_path, 'w') as f:
+            data = {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+            }
+            json.dump(data, f)
 
-    with open(config, "r") as f:
+    with open(config_path, "r") as f:
         data = json.load(f)
         if "lifx_token" not in data or not data["lifx_token"]:
             raise ValueError("Must have LIFX token in config")
-        return data["lifx_token"]
+        return data
 
 
-def parse_time():
+def parse_time(config):
     LOG.info("Parsing time for cos, sin and meridiem")
     t = datetime.datetime.now()
     hours = int(t.strftime('%H'))
     minutes = int(t.strftime('%M'))
 
     minutes_after_midnight = hours * 60 + minutes
-    minutes_past_noon = (minutes_after_midnight + (60 * 12)) % min_in_day
+    minutes_past_noon = (minutes_after_midnight + (60 * 12)) % config['min_in_day']
 
-    t_cos = math.cos(minutes_past_noon * (2 * math.pi / min_in_day))
-    t_sin = math.sin(minutes_past_noon * (2 * math.pi / min_in_day))
+    t_cos = math.cos(minutes_past_noon * (2 * math.pi / config['min_in_day']))
+    t_sin = math.sin(minutes_past_noon * (2 * math.pi / config['min_in_day']))
     if abs(t_cos) < 0.0000000001:
         t_cos = 0.0
     if abs(t_sin) < 0.0000000001:
@@ -118,15 +91,15 @@ def parse_time():
     return [t_cos, t_sin, meridiem]
 
 
-def get_prediction():
+def get_prediction(config):
     LOG.info("Getting MLS prediction")
-    t = parse_time()
+    t = parse_time(config)
     return p_api.predict([0] + t)
 
 
-def update_mls(rgb):
+def update_mls(rgb, config):
     LOG.info("Updating MLS models with {}".format(rgb))
-    t = parse_time()
+    t = parse_time(config)
     p_api.update([rgb] + t)
 
 
@@ -134,10 +107,10 @@ def get_lighting(token):
     LOG.info("Getting current lighting configuration")
     res = lifx.get_lights(token)
     lights = [{
-                "hue": l['color']['hue'],
-                "saturation": l['color']['saturation'],
-                "brightness": l['brightness'],
-                "id": l['id']
+                  "hue": l['color']['hue'],
+                  "saturation": l['color']['saturation'],
+                  "brightness": l['brightness'],
+                  "id": l['id']
               } for l in res['data']]
 
     majority = {}
@@ -157,7 +130,7 @@ def get_lighting(token):
     return [c * 255 for c in rgb]
 
 
-def validate_lighting(predicted, current):
+def validate_lighting(predicted, current, config):
     LOG.info("Validating current: {} with predicted: {}".format(current, predicted))
     p_rgb = predicted.split(',')
     p_rgb = [float(p) / 255 for p in p_rgb]
@@ -167,13 +140,13 @@ def validate_lighting(predicted, current):
 
     de = delta_e_cie2000(convert_color(c1, LabColor), convert_color(c2, LabColor))
     LOG.info("delta_e: {}".format(de))
-    return de < de_threshold
+    return de < config['de_threshold']
 
 
 def check_last(rgb):
     LOG.info("Comparing previous CCH input with current")
-    with open(last_input, 'r') as f:
-        data = json.load(f)
+    with open(last_input_path, 'r') as f:
+        data = json.loads(f.read())
         r = rgb[0] == data['r']
         g = rgb[1] == data['g']
         b = rgb[2] == data['b']
@@ -181,59 +154,89 @@ def check_last(rgb):
 
 
 def get_user_input():
-    with open(user_input, 'r') as f:
-        return json.load(f)
+    with open(user_input_path, 'r') as f:
+        return json.loads(f.read())
 
 
-def get_weather():
-    None
+def incorporate(mls, clouds, user):
+    mls_rgb = mls.split(',')
+    mls_rgb = [float(p) / 255 for p in mls_rgb]
+
+    return {
+        "r": (mls_rgb[0] * (1 - user['weight'])) + (user['r'] * user['weight']),
+        "g": (mls_rgb[1] * (1 - user['weight'])) + (user['g'] * user['weight']),
+        "b": (mls_rgb[2] * (1 - user['weight'])) + (user['b'] * user['weight']),
+        "brightness": clouds / 2 + 0.5
+    }
 
 
-def incorporate(mls, weather, user):
-    None
+def update_last_input(rgb):
+    with open(last_input_path, 'w') as f:
+        data = {
+            "r": rgb['r'],
+            "g": rgb['g'],
+            "b": rgb['b']
+        }
+        json.dump(data, f)
+
+
+def update_user_input(rgb, config):
+    with open(user_input_path, 'w') as f:
+        data = {
+            "r": rgb['r'],
+            "g": rgb['g'],
+            "b": rgb['b'],
+            "weight": rgb['weight'] - config['decay']
+        }
+        json.dump(data, f)
+
+
+def init_user_input(rgb):
+    with open(user_input_path, 'w') as f:
+        data = {
+            "r": rgb[0],
+            "g": rgb[1],
+            "b": rgb[2],
+            "weight": 0.9
+        }
+        json.dump(data, f)
+
+
+def post_to_bulbs(token, rgb, retries, t=1, current=1):
+    rgb_s = "rgb:{},{},{}".format(int(rgb['r']), int(rgb['g']), int(rgb['b']))
+    res = lifx.set_color(token, rgb_s, rgb['brightness'])
+
+    if res['status'] < 200 or res['status'] >= 300:
+        if current > retries:
+            LOG.error("Error posting to bulbs. Status={}".format(res['status']))
+            return res
+
+        LOG.info("Error posting to bulbs, retrying in {} seconds".format(t))
+        time.sleep(t)
+        return post_to_bulbs(token, rgb, retries, t=math.pow(2, current) - 1, current=current + 1)
+
+    return res
 
 
 def main():
-    # get lighting config
-    # validate lighting (threshold & outlier)
-    #   if valid, update MLS
-    # if lighting same as previous cycle
-    #   if user input does not exist
-    #       get and incorporate MLS prediction and weather data
-    #       save to last_input.json
-    #       post to bulbs
-    #           exponential back off if failed
-    #   else user input exists
-    #       get value from user_input.json
-    #       get and incorporate MLS prediction, weather data, and user input
-    #       decay if not 0 then save to user_input.json
-    #       else decay is 0, then clear user_input.json
-    #       save to last_input.json
-    #       post to bulbs
-    #           exponential back off if failed
-    # else user just changed lights
-    #   initialize user_input.json with color and 0.9 weight
-    #   get and incorporate MLS prediction, weather data, and user input
-    #   save to last_input.json
-    #   post to bulbs
-    #       exponential back off if failed
+    config = init_resources()
+    current = get_lighting(config['lifx_token'])
+    predicted = get_prediction(config)
+    clouds = w_api.current_cloud_coverage()
+    user_input = get_user_input()
+    incorporated = incorporate(predicted.split(':')[1], clouds, user_input)
 
-    lifx_token = init_resources()
-    rgb = get_lighting(lifx_token)
-    p = get_prediction()
-    valid = validate_lighting(p.split(':')[1], rgb)
-
-    if valid:
-        update_mls(rgb)
-
-    # user did not change lighting last cycle
-    if check_last(rgb):
-        u_input = get_user_input()
-        w_data = w_api.get_current_weather()
+    # update MLS if within threshold
+    if validate_lighting(predicted.split(':')[1], current, config):
+        update_mls(current, config)
 
     # user changed lighting last cycle
-    else:
-        w_data = w_api.get_current_weather()
+    if not check_last(current):
+        init_user_input(current)
+
+    update_last_input(incorporated)
+    update_user_input(user_input, config)
+    post_to_bulbs(config['lifx_token'], incorporated, 3)
 
 
 if __name__ == '__main__':

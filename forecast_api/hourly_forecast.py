@@ -12,7 +12,6 @@ def get_forecast():
     return [hourly.data[x].summary for x in range(0, 24)]
 
 
-def get_current_weather():
+def current_cloud_coverage():
     wf = forecast.currently()
-    print(wf.icon)
-    return wf.icon
+    return wf.d['cloudCover']
