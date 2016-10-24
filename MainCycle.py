@@ -144,13 +144,13 @@ def validate_lighting(predicted, current, config):
 
 
 def check_last(rgb):
-    LOG.info("Comparing previous CCH input with current")
-    print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ " + str(rgb))
     with open(last_input_path, 'r') as f:
         data = json.loads(f.read())
         r = rgb[0] == data['r']
         g = rgb[1] == data['g']
         b = rgb[2] == data['b']
+
+    LOG.info("Comparing previous {} with current {}".format(data, rgb))
     return r and g and b
 
 
@@ -172,42 +172,31 @@ def incorporate(mls, clouds, user):
 
 
 def update_last_input(rgb):
-    with open(last_input_path, 'w') as f:
-        data = {
-            "r": rgb['r'],
-            "g": rgb['g'],
-            "b": rgb['b']
-        }
+    with open(last_input_path, 'w+') as f:
+        data = json.loads(f.read())
+        f.seek(0)
+        data["r"] = rgb['r']
+        data["g"] = rgb['g']
+        data["b"] = rgb['b']
         json.dump(data, f)
 
 
-def update_user_input(rgb, config):
-    with open(user_input_path, 'w') as f:
-        if rgb['weight'] <= 0.0:
-            data = {
-            "r": rgb['r'],
-            "g": rgb['g'],
-            "b": rgb['b'],
-            "weight": 0.0
-        }
-        else:    
-            data = {
-            "r": rgb['r'],
-            "g": rgb['g'],
-            "b": rgb['b'],
-            "weight": rgb['weight'] - config['decay']
-            }
+def update_user_input(config):
+    with open(user_input_path, 'w+') as f:
+        data = json.loads(f.read())
+        f.seek(0)
+        data["weight"] = 0 if data['weight'] - config['decay'] < 0 else data['weight'] - config['decay']
         json.dump(data, f)
 
 
 def init_user_input(rgb):
-    with open(user_input_path, 'w') as f:
-        data = {
-            "r": rgb[0],
-            "g": rgb[1],
-            "b": rgb[2],
-            "weight": 0.9
-        }
+    with open(user_input_path, 'w+') as f:
+        data = json.loads(f.read())
+        f.seek(0)
+        data["r"] = rgb['r']
+        data["g"] = rgb['g']
+        data["b"] = rgb['b']
+        data['weight'] = 1.0
         json.dump(data, f)
 
 
@@ -244,7 +233,7 @@ def main():
         init_user_input(current)
 
     update_last_input(incorporated)
-    update_user_input(user_input, config)
+    update_user_input(config)
     post_to_bulbs(config['lifx_token'], incorporated, 3)
 
 
