@@ -150,7 +150,7 @@ def check_last(rgb):
         g = rgb['g'] == data['g']
         b = rgb['b'] == data['b']
 
-    LOG.info("Comparing previous {} with current {}".format(data, rgb))
+    LOG.info("Previous {} and current {} are same: {}".format(data, rgb, r and g and b))
     return r and g and b
 
 
