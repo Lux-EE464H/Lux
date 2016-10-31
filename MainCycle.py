@@ -9,6 +9,7 @@ import json
 import time
 import logging
 import colorsys
+import pprint
 from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
 from colormath.color_diff import delta_e_cie2000
@@ -29,35 +30,26 @@ def init_resources():
     if not os.path.isdir(resources_dir_path):
         os.makedirs(resources_dir_path)
 
+    if not os.path.exists(config_path):
+        raise FileNotFoundError("Config file missing in resources directory")
+
     if not os.path.exists(user_input_path):
-        with open(user_input_path, 'w') as f:
-            data = {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0,
-                "weight": 0.0
-            }
-            LOG.info("Creating user_input.json {}".format(data))
-            json.dump(data, f)
+        open(user_input_path, "x")
 
     if not os.path.exists(last_input_path):
-        with open(last_input_path, 'w') as f:
-            data = {
-                "r": 0.0,
-                "g": 0.0,
-                "b": 0.0
-            }
-            LOG.info("Creating last_input.json {}".format(data))
-            json.dump(data, f)
-
-    if not os.path.exists(config_path):
-        raise FileNotFoundError("Must have config file with lifx_token, min_in_day, de_threshold and decay")
+        open(last_input_path, "x")
 
     with open(config_path, "r") as f:
         data = json.load(f)
 
         if "lifx_token" not in data or not data["lifx_token"]:
-            raise ValueError("Must have LIFX token in config")
+            raise ValueError("Missing LIFX token in config")
+
+        if "delta_e" not in data or not data["delta_e"]:
+            raise ValueError("Missing deltaE in config")
+
+        if "decay_rate" not in data or not data["decay_rate"]:
+            raise ValueError("Missing decay rate in config")
 
         return data
 
@@ -89,90 +81,93 @@ def parse_time():
 def get_prediction():
     t = parse_time()
     p = p_api.predict([0] + t)
-    LOG.info("Predicted lighting: {}".format(p))
+    LOG.info("Predicted lighting: {}".format(pprint.pformat(p)))
     return p
 
 
 def update_mls(rgb):
-    LOG.info("Updating MLS model with {}".format(rgb))
+    LOG.info("Updating MLS model with {}".format(pprint.pformat(rgb)))
     t = parse_time()
     p_api.update([[rgb['r'], rgb['g'], rgb['b']]] + t)
 
 
+def is_same_hsbk(c1, c2):
+    if abs(c1['h'] - c2['h']) <= 1 \
+            and abs(c1['s'] - c2['s']) <= 1 \
+            and abs(c1['b'] - c2['b']) <= 1 \
+            and abs(c1['k'] - c2['k']) <= 1:
+        return True
+    return False
+
+
 def get_lighting(token):
     res = lifx.get_lights(token)
-    lights = [{"hue": l['color']['hue'],
-               "saturation": l['color']['saturation'],
-               "brightness": l['brightness'],
-               "id": l['id']
-               } for l in res['data']]
+    lights = {}
+
+    for l in res['data']:
+        lights[l['id']] = {"h": round(l['color']['hue']),
+                           "s": round(l['color']['saturation']),
+                           "k": round(l['color']['kelvin']),
+                           "b": round(l['brightness'])}
 
     majority = {}
     maximum = ('', 0)
-    for light in lights:
-        if light['id'] in majority:
-            majority[light['id']] += 1
-        else:
-            majority[light['id']] = 1
+    for l_id, light in lights.items():
+        if l_id in majority and is_same_hsbk(light, majority[l_id]):
+            majority[l_id] += 1
+        elif l_id not in majority:
+            majority[l_id] = 1
 
-        if majority[light['id']] > maximum[1]:
-            maximum = (light, majority[light['id']])
+        if majority[l_id] > maximum[1]:
+            maximum = (light, majority[l_id])
 
-    rgb = colorsys.hsv_to_rgb(maximum[0]['hue'] / 360.0,
-                              maximum[0]['saturation'],
-                              maximum[0]['brightness'])
-    rgb_d = {
-        'r': rgb[0] * 255,
-        'g': rgb[1] * 255,
-        'b': rgb[2] * 255
-    }
-
-    LOG.info("Majority lighting configuration: {}".format(rgb_d))
-    return rgb_d
+    LOG.info("Majority lighting configuration: {}".format(pprint.pformat(maximum[0])))
+    return maximum[0]
 
 
 def validate_lighting(predicted, current, threshold):
-    c1 = sRGBColor(predicted['r'] / 255.0, predicted['g'] / 255.0, predicted['b'] / 255.0)
-    c2 = sRGBColor(current['r'] / 255, current['g'] / 255, current['b'] / 255)
+    c1_rgb = colorsys.hsv_to_rgb(current['h'] / 360, current['s'], current['b'])
+
+    c1 = sRGBColor(c1_rgb[0] / 255, c1_rgb[1] / 255, c1_rgb[2] / 255)
+    c2 = sRGBColor(predicted['r'] / 255.0, predicted['g'] / 255.0, predicted['b'] / 255.0)
 
     de = delta_e_cie2000(convert_color(c1, LabColor), convert_color(c2, LabColor))
     LOG.info("delta_e: {} is within valid range: {}".format(de, de < threshold))
     return de < threshold
 
 
-def check_last(rgb, threshold):
+def check_last(hsbk):
     with open(last_input_path, 'r') as f:
         data = json.loads(f.read())
-        same = validate_lighting(data, rgb, threshold)
-
-    LOG.info("Previous {} and current {} are same: {}".format(data, rgb, same))
-    return same
+        return is_same_hsbk(hsbk, data)
 
 
 def get_user_input():
     with open(user_input_path, 'r') as f:
-        data = json.loads(f.read())
-        return None if data['weight'] <= 0 else data
+        if os.path.getsize(user_input_path) == 0:
+            return None
+        return json.loads(f.read())
+
+
+def blend_color_component(c_mls, c_user, t):
+    # Algorithm: http://stackoverflow.com/questions/726549/algorithm-for-additive-color-mixing-for-rgb-values
+    return math.sqrt(((1 - t) * (c_mls ** 2)) + (t * (c_user ** 2)))
 
 
 def incorporate(mls, clouds, user):
     if user is not None:
-        mls['r'] = (mls['r'] * (1 - user['weight'])) + (user['r'] * user['weight'])
-        mls['g'] = (mls['g'] * (1 - user['weight'])) + (user['g'] * user['weight'])
-        mls['b'] = (mls['b'] * (1 - user['weight'])) + (user['b'] * user['weight'])
-    mls['brightness'] = clouds / 2 + 0.5
+        c_user = colorsys.hsv_to_rgb(user['h'] / 360, user['s'], user['b'])
+        mls['r'] = blend_color_component(mls['r'], c_user[0] / 255, user['weight'])
+        mls['g'] = blend_color_component(mls['g'], c_user[1] / 255, user['weight'])
+        mls['b'] = blend_color_component(mls['b'], c_user[2] / 255, user['weight'])
+
+    mls['brightness'] = round(clouds / 2 + 0.5, 1)
     return mls
 
 
-def update_last_input(rgb):
-    with open(last_input_path, 'r+') as f:
-        data = json.loads(f.read())
-        f.seek(0, 0)
-        f.truncate()
-        data["r"] = rgb['r']
-        data["g"] = rgb['g']
-        data["b"] = rgb['b']
-        json.dump(data, f)
+def update_last_input(hsbk):
+    with open(last_input_path, 'w') as f:
+        json.dump(hsbk, f)
 
 
 def update_user_input(decay):
@@ -180,20 +175,14 @@ def update_user_input(decay):
         data = json.loads(f.read())
         f.seek(0, 0)
         f.truncate()
-        data["weight"] = 0 if data['weight'] - decay < 0 else data['weight'] - decay
+        data["weight"] = 0 if data['weight'] - decay < 0 else round(data['weight'] - decay, 1)
         json.dump(data, f)
 
 
-def init_user_input(rgb):
-    with open(user_input_path, 'r+') as f:
-        data = json.loads(f.read())
-        f.seek(0, 0)
-        f.truncate()
-        data["r"] = rgb['r']
-        data["g"] = rgb['g']
-        data["b"] = rgb['b']
-        data['weight'] = 1.0
-        json.dump(data, f)
+def init_user_input(hsbk):
+    with open(user_input_path, 'w') as f:
+        hsbk['weight'] = 1.0
+        json.dump(hsbk, f)
 
 
 def post_to_bulbs(token, rgb, retries, t=1, current=1):
@@ -213,9 +202,7 @@ def post_to_bulbs(token, rgb, retries, t=1, current=1):
 
 
 def is_initial_cycle():
-    with open(last_input_path, 'r') as f:
-        data = json.loads(f.read())
-        return data['r'] == 0.0 and data['g'] == 0.0 and data['b'] == 0.0
+    return os.path.getsize(last_input_path) == 0
 
 
 def main():
@@ -227,20 +214,20 @@ def main():
 
     if not is_initial_cycle():
         # user changed lighting last cycle
-        if not check_last(current, config['de_similarity']):
+        if not check_last(current):
             init_user_input(current)
 
         # update MLS if within threshold
-        if validate_lighting(predicted, current, config['de_threshold']):
+        if validate_lighting(predicted, current, config['delta_e']):
             update_mls(current)
 
-        update_user_input(config['decay'])
+        update_user_input(config['decay_rate'])
 
     user_input = get_user_input()
     incorporated = incorporate(predicted, clouds, user_input)
 
-    update_last_input(incorporated)
     post_to_bulbs(config['lifx_token'], incorporated, 3)
+    update_last_input(get_lighting(config['lifx_token']))
 
 
 if __name__ == '__main__':
