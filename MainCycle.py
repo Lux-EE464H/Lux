@@ -157,14 +157,23 @@ def blend_color_component(c_mls, c_user, t):
     # Algorithm: http://stackoverflow.com/questions/726549/algorithm-for-additive-color-mixing-for-rgb-values
     return math.sqrt(((1 - t) * (c_mls ** 2)) + (t * (c_user ** 2)))
 
+def blend_with_white(white_component, target_component, t):
+    return ((t * white_component) + ((1-t) * target_component))
 
 def incorporate(mls, clouds, user):
     if user is not None:
         c_user = colorsys.hsv_to_rgb(user['h'] / 360, user['s'], user['b'])
-        mls['r'] = blend_color_component(mls['r'], c_user[0] / 255, user['weight'])
-        mls['g'] = blend_color_component(mls['g'], c_user[1] / 255, user['weight'])
-        mls['b'] = blend_color_component(mls['b'], c_user[2] / 255, user['weight'])
-
+        if user['weight'] >= 0.5:
+            white_prop = 2*(1-user['weight'])
+            mls['r'] = blend_with_white(230.0, c_user[0] / 255, white_prop)
+            mls['g'] = blend_with_white(255.0, c_user[1] / 255, white_prop)
+            mls['b'] = blend_with_white(255.0, c_user[2] / 255, white_prop)
+        else:
+            white_prop = 2*user['weight']
+            mls['r'] = blend_with_white(230.0, mls['r'], white_prop)
+            mls['g'] = blend_with_white(255.0, mls['g'], white_prop)
+            mls['b'] = blend_with_white(255.0, mls['b'], white_prop)
+            
     mls['brightness'] = round(clouds / 2 + 0.5, 1)
     return mls
 
