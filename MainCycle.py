@@ -85,10 +85,11 @@ def get_prediction():
     return p
 
 
-def update_mls(rgb):
+def update_mls(hsbk):
+    rgb = colorsys.hsv_to_rgb(hsbk['h'] / 360, hsbk['s'], hsbk['b'])
     LOG.info("Updating MLS model with {}".format(pprint.pformat(rgb)))
     t = parse_time()
-    p_api.update([[rgb['r'], rgb['g'], rgb['b']]] + t)
+    p_api.update([[rgb[0]*255, rgb[1]*255, rgb[2]*255]] + t)
 
 
 def is_same_hsbk(c1, c2):
@@ -119,7 +120,7 @@ def get_lighting(token):
 
             #if majority[l_id] > maximum[1]:
             #    maximum = (light, majority[l_id])
-            LOG.info("from API: {}".format(pprint.pformat(res['data'][0])))
+            #LOG.info("from API: {}".format(pprint.pformat(res['data'][0])))
             LOG.info("Selected lighting configuration: {}".format(pprint.pformat(light)))
             return light
 
@@ -127,7 +128,7 @@ def get_lighting(token):
 def validate_lighting(predicted, current, threshold):
     c1_rgb = colorsys.hsv_to_rgb(current['h'] / 360, current['s'], current['b'])
 
-    c1 = sRGBColor(c1_rgb[0] / 255, c1_rgb[1] / 255, c1_rgb[2] / 255)
+    c1 = sRGBColor(c1_rgb[0], c1_rgb[1], c1_rgb[2])
     c2 = sRGBColor(predicted['r'] / 255.0, predicted['g'] / 255.0, predicted['b'] / 255.0)
 
     print("c1 is " + str(c1) + " and c2 is " + str(c2))
@@ -161,16 +162,16 @@ def blend_with_white(white_component, target_component, t):
 def incorporate(mls, clouds, user):
     if user is not None:
         c_user = colorsys.hsv_to_rgb(user['h'] / 360, user['s'], user['b'])
-        if user['weight'] >= 0.5:
-            white_prop = 2*(1-user['weight'])
-            mls['r'] = blend_with_white(230.0, c_user[0] / 255, white_prop)
-            mls['g'] = blend_with_white(255.0, c_user[1] / 255, white_prop)
-            mls['b'] = blend_with_white(255.0, c_user[2] / 255, white_prop)
-        else:
-            white_prop = 2*user['weight']
-            mls['r'] = blend_with_white(230.0, mls['r'], white_prop)
-            mls['g'] = blend_with_white(255.0, mls['g'], white_prop)
-            mls['b'] = blend_with_white(255.0, mls['b'], white_prop)
+        #if user['weight'] >= 0.5:
+        #    white_prop = 2*(1-user['weight'])
+        #    mls['r'] = blend_with_white(230.0, c_user[0] / 255, white_prop)
+        #    mls['g'] = blend_with_white(255.0, c_user[1] / 255, white_prop)
+        #    mls['b'] = blend_with_white(255.0, c_user[2] / 255, white_prop)
+       # else:
+        white_prop = user['weight']
+        mls['r'] = blend_with_white(c_user[0], mls['r'], white_prop)
+        mls['g'] = blend_with_white(c_user[1], mls['g'], white_prop)
+        mls['b'] = blend_with_white(c_user[2], mls['b'], white_prop)
             
     mls['brightness'] = round(clouds / 2 + 0.5, 1)
     return mls
@@ -181,20 +182,23 @@ def update_last_input(hsbk):
         json.dump(hsbk, f)
 
 
-def update_user_input(decay):
+def update_user_input():
     if os.path.getsize(user_input_path) == 0:
         return
     with open(user_input_path, 'r+') as f:
         data = json.loads(f.read())
         f.seek(0, 0)
         f.truncate()
-        data["weight"] = 0 if data['weight'] - decay <= 0 else round(data['weight'] - decay, 1)
+        decay = data['decay']
+        data['decay'] = decay + (decay * 10)
+        data["weight"] = 0 if data['weight'] - decay <= 0 else data['weight'] - decay
         json.dump(data, f)
 
 
-def init_user_input(hsbk):
+def init_user_input(hsbk, decay):
     with open(user_input_path, 'w') as f:
         hsbk['weight'] = 1.0
+        hsbk['decay'] = decay
         json.dump(hsbk, f)
 
 
@@ -228,13 +232,13 @@ def main():
         # user changed lighting last cycle
         if not check_last(current):
             print("Initializing user input")
-            init_user_input(current)
+            init_user_input(current, config['decay_rate'])
 
         # update MLS if within threshold
         if validate_lighting(predicted, current, config['delta_e']):
             update_mls(current)
 
-        update_user_input(config['decay_rate'])
+        update_user_input()
 
     user_input = get_user_input()
     incorporated = incorporate(predicted, clouds, user_input)
