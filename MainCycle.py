@@ -99,27 +99,28 @@ def is_same_hsbk(c1, c2):
         return True
     return False
 
-
 def get_lighting(token):
     res = lifx.get_lights(token)
     lights = {}
 
     for l in res['data']:
-        lights[l['id']] = {"h": round(l['color']['hue']),
-                           "s": round(l['color']['saturation']),
-                           "k": round(l['color']['kelvin']),
-                           "b": round(l['brightness'])}
+        lights[l['id']] = {"h": l['color']['hue'],
+                           "s": l['color']['saturation'],
+                           "k": l['color']['kelvin'],
+                           "b": l['brightness'],
+                           "connected": l['connected']}
 
     majority = {}
     maximum = ('', 0)
     for l_id, light in lights.items():
-        if l_id in majority and is_same_hsbk(light, majority[l_id]):
-            majority[l_id] += 1
-        elif l_id not in majority:
-            majority[l_id] = 1
+        if light['connected'] == True:
+            if l_id in majority and is_same_hsbk(light, majority[l_id]):
+                majority[l_id] += 1
+            elif l_id not in majority:
+                majority[l_id] = 1
 
-        if majority[l_id] > maximum[1]:
-            maximum = (light, majority[l_id])
+            if majority[l_id] > maximum[1]:
+                maximum = (light, majority[l_id])
 
     LOG.info("Majority lighting configuration: {}".format(pprint.pformat(maximum[0])))
     return maximum[0]
@@ -131,6 +132,8 @@ def validate_lighting(predicted, current, threshold):
     c1 = sRGBColor(c1_rgb[0] / 255, c1_rgb[1] / 255, c1_rgb[2] / 255)
     c2 = sRGBColor(predicted['r'] / 255.0, predicted['g'] / 255.0, predicted['b'] / 255.0)
 
+    print("c1 is " + str(c1) + " and c2 is " + str(c2))
+
     de = delta_e_cie2000(convert_color(c1, LabColor), convert_color(c2, LabColor))
     LOG.info("delta_e: {} is within valid range: {}".format(de, de < threshold))
     return de < threshold
@@ -139,6 +142,7 @@ def validate_lighting(predicted, current, threshold):
 def check_last(hsbk):
     with open(last_input_path, 'r') as f:
         data = json.loads(f.read())
+        print("HSBK currently is: " + str(hsbk) + " and Last Time's input is: " + str(data))
         return is_same_hsbk(hsbk, data)
 
 
@@ -171,11 +175,13 @@ def update_last_input(hsbk):
 
 
 def update_user_input(decay):
+    if os.path.getsize(user_input_path) == 0:
+        return
     with open(user_input_path, 'r+') as f:
         data = json.loads(f.read())
         f.seek(0, 0)
         f.truncate()
-        data["weight"] = 0 if data['weight'] - decay < 0 else round(data['weight'] - decay, 1)
+        data["weight"] = 0 if data['weight'] - decay <= 0 else round(data['weight'] - decay, 1)
         json.dump(data, f)
 
 
@@ -204,7 +210,6 @@ def post_to_bulbs(token, rgb, retries, t=1, current=1):
 def is_initial_cycle():
     return os.path.getsize(last_input_path) == 0
 
-
 def main():
     config = init_resources()
 
@@ -215,6 +220,7 @@ def main():
     if not is_initial_cycle():
         # user changed lighting last cycle
         if not check_last(current):
+            print("Initializing user input")
             init_user_input(current)
 
         # update MLS if within threshold
