@@ -110,20 +110,18 @@ def get_lighting(token):
                            "b": l['brightness'],
                            "connected": l['connected']}
 
-    majority = {}
-    maximum = ('', 0)
     for l_id, light in lights.items():
         if light['connected'] == True:
-            if l_id in majority and is_same_hsbk(light, majority[l_id]):
-                majority[l_id] += 1
-            elif l_id not in majority:
-                majority[l_id] = 1
+            #if l_id in majority and is_same_hsbk(light, majority[l_id]):
+            #    majority[l_id] += 1
+            #elif l_id not in majority:
+            #    majority[l_id] = 1
 
-            if majority[l_id] > maximum[1]:
-                maximum = (light, majority[l_id])
-
-    LOG.info("Majority lighting configuration: {}".format(pprint.pformat(maximum[0])))
-    return maximum[0]
+            #if majority[l_id] > maximum[1]:
+            #    maximum = (light, majority[l_id])
+            LOG.info("from API: {}".format(pprint.pformat(res['data'][0])))
+            LOG.info("Selected lighting configuration: {}".format(pprint.pformat(light)))
+            return light
 
 
 def validate_lighting(predicted, current, threshold):
@@ -242,6 +240,7 @@ def main():
     incorporated = incorporate(predicted, clouds, user_input)
 
     post_to_bulbs(config['lifx_token'], incorporated, 3)
+    time.sleep(1)
     update_last_input(get_lighting(config['lifx_token']))
 
 
