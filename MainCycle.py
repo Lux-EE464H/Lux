@@ -110,19 +110,20 @@ def get_lighting(token):
                            "k": l['color']['kelvin'],
                            "b": l['brightness'],
                            "connected": l['connected']}
-
+    majority = {}
+    maximum = ({},0)
     for l_id, light in lights.items():
         if light['connected'] == True:
-            #if l_id in majority and is_same_hsbk(light, majority[l_id]):
-            #    majority[l_id] += 1
-            #elif l_id not in majority:
-            #    majority[l_id] = 1
+            if l_id in majority and is_same_hsbk(light, majority[l_id]):
+                majority[l_id] += 1
+            elif l_id not in majority:
+                majority[l_id] = 1
 
-            #if majority[l_id] > maximum[1]:
-            #    maximum = (light, majority[l_id])
+            if majority[l_id] > maximum[1]:
+                maximum = (light, majority[l_id])
             #LOG.info("from API: {}".format(pprint.pformat(res['data'][0])))
-            LOG.info("Selected lighting configuration: {}".format(pprint.pformat(light)))
-            return light
+    LOG.info("Selected lighting configuration: {}".format(pprint.pformat(maximum[0])))
+    return maximum[0]
 
 
 def validate_lighting(predicted, current, threshold):
@@ -169,10 +170,11 @@ def incorporate(mls, clouds, user):
         #    mls['b'] = blend_with_white(255.0, c_user[2] / 255, white_prop)
        # else:
         white_prop = user['weight']
-        mls['r'] = blend_with_white(c_user[0], mls['r'], white_prop)
-        mls['g'] = blend_with_white(c_user[1], mls['g'], white_prop)
-        mls['b'] = blend_with_white(c_user[2], mls['b'], white_prop)
-            
+        #print("\nCHECK C_USER: " + str(c_user[0]) + "," + str(c_user[1]) + "," + str(c_user[2]))
+        mls['r'] = blend_with_white(c_user[0] * 255.0, mls['r'], white_prop)
+        mls['g'] = blend_with_white(c_user[1] * 255.0, mls['g'], white_prop)
+        mls['b'] = blend_with_white(c_user[2] * 255.0, mls['b'], white_prop)
+        #print("\nCHECK Blended: " + str(mls['r']) + "," + str(mls['g']) + "," + str(mls['b']))    
     mls['brightness'] = round(clouds / 2 + 0.5, 1)
     return mls
 
@@ -190,7 +192,7 @@ def update_user_input():
         f.seek(0, 0)
         f.truncate()
         decay = data['decay']
-        data['decay'] = decay + (decay * 10)
+        #data['decay'] = (decay * 10)
         data["weight"] = 0 if data['weight'] - decay <= 0 else data['weight'] - decay
         json.dump(data, f)
 
